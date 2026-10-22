@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cổng Nhân Viên | Hệ thống Điểm danh - Đề 27</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .welcome-card {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: white;
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 20px rgba(79, 70, 229, 0.2);
+    }
+    .welcome-card h2 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .welcome-card p {
+      opacity: 0.9;
+      font-size: 0.95rem;
+    }
+
+    .today-action-card {
+      background: white;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .shift-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      padding: 16px 20px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      margin-bottom: 20px;
+    }
+
+    .shift-banner-info h4 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 4px;
+    }
+
+    .shift-banner-info p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .action-button-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px 20px;
+      text-align: center;
+      background: #fbfcfe;
+      border: 1px dashed #cbd5e1;
+      border-radius: var(--radius-md);
+    }
+
+    .btn-big-action {
+      padding: 14px 36px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+      box-shadow: var(--shadow-md);
+      border: none;
+    }
+
+    .profile-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .profile-info-item {
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+
+    .profile-info-item label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+
+    .profile-info-item p {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-icon">E</div>
+        <div class="logo-text">
+          <h2>Điểm Danh 27</h2>
+          <span>Cổng Nhân Viên</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-target="emp-section-home">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          <span>Bàn làm việc</span>
+        </button>
+
+        <button class="nav-item" data-target="emp-section-history">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0zM3 3h4v4H3zM3 17h4v4H3z" />
+          </svg>
+          <span>Lịch sử của tôi</span>
+        </button>
+
+        <button class="nav-item" data-target="emp-section-profile">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+          <span>Thông tin cá nhân</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-badge">
+          <div class="user-info">
+            <div class="user-avatar" id="emp-avatar-initial">E</div>
+            <div class="user-names">
+              <h4 id="emp-user-name">Đang tải...</h4>
+              <p id="emp-user-code">NV---</p>
+            </div>
+          </div>
+          <button class="btn-logout" id="btn-logout" title="Đăng xuất">
+            <svg style="width: 20px; height: 20px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-wrapper">
+      <!-- Top Bar -->
+      <header class="top-bar">
+        <div class="page-title">
+          <h1 id="emp-view-title">Bàn làm việc Nhân viên</h1>
+        </div>
+        <div class="top-bar-actions">
+          <div class="current-time-badge">
+            <span class="pulse-dot"></span>
+            <span id="clock-display">Đang tải...</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- ========================================================= -->
+        <!-- SECTION 1: HOME & ATTENDANCE -->
+        <!-- ========================================================= -->
+        <section id="emp-section-home" class="view-section active">
+          <!-- Welcome Banner -->
+          <div class="welcome-card">
+            <h2 id="welcome-title">Xin chào!</h2>
+            <p id="welcome-sub">Chúc bạn một ngày làm việc tràn đầy năng lượng và hiệu quả.</p>
+          </div>
+
+          <!-- Today's Shift & Attendance Card -->
+          <div class="today-action-card">
+            <div class="panel-header" style="padding: 0 0 16px; margin-bottom: 20px; border-bottom: 1px solid var(--border);">
+              <h2>
+                <svg style="width: 22px; height: 22px; color: var(--primary);" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Ca làm việc & Điểm danh Hôm nay
+              </h2>
+            </div>
+
+            <!-- Shift Information -->
+            <div id="shift-container">
+              <div class="shift-banner">
+                <div class="shift-banner-info">
+                  <h4 id="today-shift-name">Đang kiểm tra ca làm...</h4>
+                  <p id="today-shift-time">Thời gian: --:--</p>
+                </div>
+                <div id="today-shift-badge">
+                  <span class="badge badge-pending">Kiểm tra lịch</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Attendance Action Box -->
+            <div id="attendance-action-container">
+              <!-- Dynamically populated: Check-in button, Check-out button, or Completed status -->
+              <div class="action-button-area">
+                <p style="color: var(--text-muted); margin-bottom: 12px;">Đang tải trạng thái điểm danh...</p>
+              </div>
+            </div>
+
+            <!-- Demo Time Adjustment (Optional helper for presentation) -->
+            <div style="margin-top: 20px; padding: 12px 16px; background: #f8fafc; border-radius: var(--radius-md); font-size: 0.82rem; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+              <span>💡 <em>Tùy chọn Demo: Bạn có thể nhập giờ giả lập nếu muốn kiểm tra trạng thái Đúng Giờ / Đi Muộn</em></span>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <label for="custom-action-time" style="font-weight: 600;">Giờ demo:</label>
+                <input type="time" id="custom-action-time" class="form-control" style="width: 130px; padding: 4px 8px; font-size: 0.82rem;" step="1">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- SECTION 2: MY HISTORY -->
+        <!-- ========================================================= -->
+        <section id="emp-section-history" class="view-section">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Lịch sử Điểm danh của Tôi</h2>
+            </div>
+            <div class="panel-body" style="padding-bottom: 0;">
+              <div class="filter-bar">
+                <div class="form-group">
+                  <label for="my-filter-date">Lọc theo ngày</label>
+                  <input type="date" id="my-filter-date" class="form-control">
+                </div>
+                <div class="form-group">
+                  <label for="my-filter-status">Lọc theo trạng thái</label>
+                  <select id="my-filter-status" class="form-control">
+                    <option value="">-- Tất cả trạng thái --</option>
+                    <option value="ON_TIME">Đúng giờ (ON_TIME)</option>
+                    <option value="LATE">Đi muộn (LATE)</option>
+                  </select>
+                </div>
+                <div style="align-self: flex-end;">
+                  <button type="button" class="btn btn-secondary" id="btn-reset-my-filter">
+                    🔄 Xóa bộ lọc
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Ngày Làm Việc</th>
+                    <th>Ca Làm</th>
+                    <th>Thời Gian Ca</th>
+                    <th>Giờ Check-in</th>
+                    <th>Giờ Check-out</th>
+                    <th>Trạng Thái</th>
+                  </tr>
+                </thead>
+                <tbody id="my-history-tbody">
+                  <tr><td colspan="6" class="empty-state">Đang tải lịch sử cá nhân...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- SECTION 3: MY PROFILE -->
+        <!-- ========================================================= -->
+        <section id="emp-section-profile" class="view-section">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Thông tin Cá nhân</h2>
+            </div>
+            <div class="panel-body">
+              <div class="profile-info-grid">
+                <div class="profile-info-item">
+                  <label>Mã Nhân Viên</label>
+                  <p id="profile-code">---</p>
+                </div>
+                <div class="profile-info-item">
+                  <label>Họ và Tên</label>
+                  <p id="profile-name">---</p>
+                </div>
+                <div class="profile-info-item">
+                  <label>Email Công Việc</label>
+                  <p id="profile-email">---</p>
+                </div>
+                <div class="profile-info-item">
+                  <label>Phòng Ban / Bộ Phận</label>
+                  <p id="profile-department">---</p>
+                </div>
+                <div class="profile-info-item">
+                  <label>Ngày Gia Nhập</label>
+                  <p id="profile-created">---</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/api.js"></script>
+  <script src="/js/employee.js"></script>
+</body>
+</html>

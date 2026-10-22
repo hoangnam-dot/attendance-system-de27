@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập | Hệ thống Điểm danh - Đề 27</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 50%, #f1f5f9 100%);
+      padding: 20px;
+    }
+
+    .login-card {
+      background: #ffffff;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-xl);
+      width: 100%;
+      max-width: 480px;
+      padding: 40px 32px;
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .login-logo {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      border-radius: var(--radius-lg);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 800;
+      font-size: 1.6rem;
+      box-shadow: 0 8px 16px rgba(79, 70, 229, 0.25);
+      margin-bottom: 16px;
+    }
+
+    .login-header h1 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+
+    .login-header p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .demo-box {
+      margin-top: 24px;
+      padding: 16px;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: var(--radius-md);
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .demo-box strong {
+      color: var(--text-main);
+    }
+
+    .demo-buttons-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .btn-demo-quick {
+      background: white;
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-main);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+
+    .btn-demo-quick:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    .alert-error {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: var(--danger-text);
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      margin-bottom: 18px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-logo">A</div>
+      <h1>Hệ Thống Điểm Danh</h1>
+      <p>Môn Triển khai & Quản trị Hệ thống - Đề 27</p>
+    </div>
+
+    <div id="login-alert" class="alert-error"></div>
+
+    <form id="login-form">
+      <div class="form-group">
+        <label for="username">Tên đăng nhập</label>
+        <input type="text" id="username" class="form-control" placeholder="Nhập tên đăng nhập (vd: admin hoặc nv001)" required autofocus>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label for="password">Mật khẩu</label>
+        <input type="password" id="password" class="form-control" placeholder="Nhập mật khẩu" required>
+      </div>
+
+      <button type="submit" id="btn-submit" class="btn btn-primary" style="width: 100%; padding: 12px;">
+        <span id="btn-text">Đăng Nhập</span>
+      </button>
+    </form>
+
+    <div class="demo-box">
+      <div>💡 <strong>Tài khoản Demo khởi tạo sẵn:</strong></div>
+      <div class="demo-buttons-grid">
+        <button type="button" class="btn-demo-quick" onclick="fillCredentials('admin', 'admin123')">
+          👑 <strong>Admin</strong><br><small>admin / admin123</small>
+        </button>
+        <button type="button" class="btn-demo-quick" onclick="fillCredentials('nv001', 'nv001123')">
+          👤 <strong>NV001 (An)</strong><br><small>nv001 / nv001123</small>
+        </button>
+        <button type="button" class="btn-demo-quick" onclick="fillCredentials('nv002', 'nv002123')">
+          👤 <strong>NV002 (Bích)</strong><br><small>nv002 / nv002123</small>
+        </button>
+        <button type="button" class="btn-demo-quick" onclick="fillCredentials('nv003', 'nv003123')">
+          👤 <strong>NV003 (Nam)</strong><br><small>nv003 / nv003123</small>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function fillCredentials(u, p) {
+      document.getElementById('username').value = u;
+      document.getElementById('password').value = p;
+    }
+
+    // Check if already logged in
+    (async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const res = await fetch('/api/auth/me', { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.data && data.data.user) {
+            if (data.data.user.role === 'ADMIN') {
+              window.location.href = '/';
+            } else {
+              window.location.href = '/employee.html';
+            }
+          }
+        }
+      } catch (e) {}
+    })();
+
+    const loginForm = document.getElementById('login-form');
+    const alertBox = document.getElementById('login-alert');
+    const btnSubmit = document.getElementById('btn-submit');
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.style.display = 'none';
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      btnSubmit.disabled = true;
+      document.getElementById('btn-text').textContent = 'Đang xác thực...';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          if (data.data && data.data.token) {
+            localStorage.setItem('token', data.data.token);
+            localStorage.setItem('user', JSON.stringify(data.data.user));
+          }
+          
+          // Role-based redirection
+          if (data.data.user.role === 'ADMIN') {
+            window.location.href = '/';
+          } else {
+            window.location.href = '/employee.html';
+          }
+        } else {
+          alertBox.textContent = data.message || 'Đăng nhập thất bại';
+          alertBox.style.display = 'block';
+        }
+      } catch (err) {
+        alertBox.textContent = 'Lỗi kết nối máy chủ: ' + err.message;
+        alertBox.style.display = 'block';
+      } finally {
+        btnSubmit.disabled = false;
+        document.getElementById('btn-text').textContent = 'Đăng Nhập';
+      }
+    });
+  </script>
+</body>
+</html>
