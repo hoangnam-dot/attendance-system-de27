@@ -23,6 +23,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Request logging middleware (logs method, path, status, duration; no secrets/passwords)
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[HTTP] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+  });
+  next();
+});
+
 // Healthcheck endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'UP', timestamp: new Date().toISOString() });

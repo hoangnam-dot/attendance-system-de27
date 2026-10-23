@@ -1,5 +1,5 @@
 # attendance-system-de27
-Đề 27 - Hệ thống Điểm danh / Attendance - Triển khai và Quản trị Hệ thống Phần mềm (Phase 1)
+Đề 27 - Hệ thống Điểm danh / Attendance - Triển khai và Quản trị Hệ thống Phần mềm (Full Phase 1 - Phase 2 - Phase 3)
 
 ---
 
@@ -392,12 +392,299 @@ Hệ thống được tích hợp giải pháp giám sát tập trung toàn di�
 
 ---
 
-## 12. Danh mục Ảnh Minh chứng Cần chụp (Evidence Checklist)
+## 12. Kiến trúc Toàn diện & Centralized Logging (Phase 3)
 
-Khi hoàn thiện toàn bộ hệ thống, chuẩn bị các ảnh chụp màn hình sau:
-1. **Prometheus Targets UI:** Giao diện `http://localhost:9090/targets` hiển thị cả 4 jobs (`prometheus`, `cadvisor`, `nginx`, `mysql`) đều ở trạng thái màu xanh **UP (4/4)**.
-2. **Grafana Dashboard Toàn cảnh:** Giao diện `http://localhost:3001` với dashboard **Attendance System Monitoring** đầy đủ 4 nhóm panels (Prometheus, NGINX, MySQL, Container Metrics).
-3. **cAdvisor Container Metrics:** Panel Container CPU Usage & Memory Usage hiển thị dữ liệu thật của các container `attendance_app`, `attendance_mysql`, `attendance_nginx`, `attendance_phpmyadmin`.
-4. **Nginx Web Server Metrics:** Panel NGINX hiển thị `nginx_up = 1`, Active Connections và Request counter tăng khi truy cập website.
-5. **MySQL Database Metrics:** Panel MySQL hiển thị `mysql_up = 1`, Uptime, Threads Connected và Query Rate.
-6. **Regression Test Website & phpMyAdmin:** Giao diện Admin Dashboard, Employee Portal check-in thành công và phpMyAdmin kết nối CSDL bình thường.
+### 12.1. Sơ đồ Kiến trúc Tổng thể Hệ thống
+
+Hệ thống kết hợp đồng thời 3 luồng kiến trúc (Application, Metrics Monitoring, Centralized Logging) trong 3 mạng Docker bridge cách ly:
+
+```
+                                  [ Trình duyệt / Client ]
+                                              │
+                         Port 80 (Public)     │       127.0.0.1:8080 (Localhost only)
+                ┌─────────────────────────────┴──────────────────────────────┐
+                ▼                                                            ▼
+     ┌──────────────────────┐                                     ┌──────────────────────┐
+     │   attendance_nginx   │                                     │ attendance_phpmyadmin│
+     │    (Reverse Proxy)   │                                     │     (Port 8080)      │
+     │     [web_net]        │                                     │       [db_net]       │
+     └──────────┬───────────┘                                     └──────────┬───────────┘
+                │ proxy_pass: http://app:3000                                │
+                ▼                                                            │
+     ┌──────────────────────┐                                                │
+     │    attendance_app    │                                                │
+     │  (Node.js, non-root) │                                                │
+     │  [web_net, db_net]   │                                                │
+     └──────────┬───────────┘                                                │
+                │ MySQL: mysql:3306 (utf8mb4)                                │
+                └─────────────────────────────┬──────────────────────────────┘
+                                              ▼
+                                   ┌──────────────────────┐
+                                   │   attendance_mysql   │
+                                   │    (MySQL 8.0 DB)    │
+                                   │       [db_net]       │
+                                   └──────────────────────┘
+
+════════════════════════════════ METRICS PIPELINE ═════════════════════════════════════
+   ┌──────────────────┐   ┌────────────────────────┐   ┌────────────────────────┐
+   │attendance_cadvisor│   │attendance_nginx_export│   │attendance_mysql_export │
+   │[monitoring_net]  │   │[web_net, monitoring_net│   │[db_net, monitoring_net]│
+   └────────┬─────────┘   └───────────┬────────────┘   └───────────┬────────────┘
+            │                         │                            │
+            └─────────────────────────┼────────────────────────────┘
+                                      ▼ (Scrape interval: 15s)
+                          ┌────────────────────────┐
+                          │ attendance_prometheus  │
+                          │   (127.0.0.1:9090)     │
+                          │   [monitoring_net]     │
+                          └───────────┬────────────┘
+                                      │
+════════════════════════════════ LOGGING PIPELINE ═════════════════════════════════════
+   ┌────────────────────────────────────────────────────────────────────────┐
+   │     Tất cả Docker Containers (app, nginx, mysql, exporters, ...)       │
+   └──────────────────────────────────┬─────────────────────────────────────┘
+                                      │ (docker_sd_configs qua /var/run/docker.sock)
+                                      ▼
+                          ┌────────────────────────┐
+                          │  attendance_promtail   │
+                          │    (v3.6.11, Daemon)   │
+                          │   [monitoring_net]     │
+                          └───────────┬────────────┘
+                                      │ (Push HTTP API: http://loki:3100/loki/api/v1/push)
+                                      ▼
+                          ┌────────────────────────┐
+                          │    attendance_loki     │
+                          │ (v3.6.11, Single-Bin)  │
+                          │   (127.0.0.1:3100)     │
+                          │   [monitoring_net]     │
+                          └───────────┬────────────┘
+                                      │
+════════════════════════════════ VISUALIZATION ═════════════════════════════════════════
+                                      ▼ (Prometheus & Loki Datasources)
+                          ┌────────────────────────┐
+                          │   attendance_grafana   │
+                          │   (127.0.0.1:3001)     │
+                          │   [monitoring_net]     │
+                          └────────────────────────┘
+```
+
+### 12.2. Thành phần Logging: Loki & Promtail
+
+- **Loki Service (`attendance_loki`):**
+  - **Phiên bản:** `grafana/loki:3.6.11` (exact pin tag, tương thích hoàn toàn với Promtail 3.6.11).
+  - **Mô hình triển khai:** Single-binary, lưu trữ local filesystem (`/loki/tsdb`, `/loki/wal`) tối ưu cho môi trường Lab/Dev.
+  - **Schema:** TSDB v13 engine với `retention_period: 168h` (7 ngày).
+  - **Cổng kết nối:** Lắng nghe nội bộ cổng `3100`, chỉ bind loopback máy chủ tại `127.0.0.1:3100:3100` để debug/kiểm tra.
+  - **Persistent Volume:** `attendance_loki_data` mount tại `/loki`.
+  - **Kiểm tra trạng thái sẵn sàng:** `curl.exe http://localhost:3100/ready` -> trả về `ready` (HTTP 200).
+
+- **Promtail Service (`attendance_promtail`):**
+  - **Phiên bản:** `grafana/promtail:3.6.11` (exact pin tag theo đúng rubric đề tài môn học).
+  - **Thu thập log thực tế:** Sử dụng Docker Service Discovery (`docker_sd_configs`) kết nối trực tiếp socket `/var/run/docker.sock` và mount thư mục container logs `/var/lib/docker/containers:ro`.
+  - **Cấu hình nhãn (Relabeling):**
+    - Làm sạch tên container: bỏ ký tự `/` ở đầu (`attendance_app`, `attendance_nginx`, `attendance_mysql`...).
+    - Tự động gán nhãn `service` từ Docker Compose label (`__meta_docker_container_label_com_docker_compose_service`).
+    - Giữ lại nhãn luồng `stream` (`stdout`, `stderr`) và `job: docker`.
+    - Lọc giữ chỉ các container của dự án (`attendance_.*`).
+    - Loại trừ chính container Promtail và Loki (`attendance_(promtail|loki)`) nhằm chống hiện tượng đệ quy lặp log (log loop spam).
+  - **Vị trí lưu trữ offset:** `/tmp/positions.yaml`.
+
+> [!NOTE]
+> **Ghi chú về Promtail EOL và Xu hướng Grafana Alloy:**
+> Promtail đã đạt mốc End-Of-Life (EOL) từ phía Grafana Labs. Tuy nhiên, Promtail được giữ lại và sử dụng trong đồ án này nhằm đáp ứng chuẩn mực yêu cầu kỹ thuật cụ thể từ đề bài học phần. Trong các hệ thống sản xuất (Production) thế hệ mới, **Grafana Alloy** là hướng di chuyển (migration path) chính thức được Grafana Labs khuyến nghị thay thế cho Promtail.
+
+---
+
+## 13. Grafana Loki Datasource & Logging Dashboard
+
+### 13.1. Provisioning Loki Datasource tự động
+
+File cấu hình `./grafana/provisioning/datasources/datasource.yml` tự động khởi tạo đồng thời 2 nguồn dữ liệu khi Grafana khởi động, không cần thao tác tay:
+1. **Prometheus:** `url: http://prometheus:9090`, `uid: prometheus`, `isDefault: true`.
+2. **Loki:** `url: http://loki:3100`, `uid: loki`, `isDefault: false`, `jsonData: { maxLines: 1000 }`.
+
+Kiểm tra sức khỏe datasource qua API:
+```bash
+curl.exe -s -u admin:your_password http://127.0.0.1:3001/api/datasources/uid/loki/health
+# Kết quả: {"message":"Data source successfully connected.","status":"OK"}
+```
+
+### 13.2. Dashboard "Attendance System Logs"
+
+Grafana được cấu hình nạp tự động dashboard `./grafana/provisioning/dashboards/attendance-logs.json` (UID: `attendance-system-logs`) với các panels chuyên biệt:
+- **Total Log Lines ($__range):** Panel Stat đo lường tổng số dòng log thu nạp được.
+- **Log Ingestion Rate by Service (1m bins):** TimeSeries biểu đồ cột thể hiện tốc độ phát sinh log phân theo từng service.
+- **Node.js Application Logs:** Panel Logs hiển thị luồng log backend Express (kết nối DB, log request, đăng nhập, điểm danh).
+- **NGINX Web Server Logs:** Panel Logs hiển thị access log và error log từ reverse proxy Nginx.
+- **Filtered Errors & Security Logs:** Panel Logs lọc riêng các cảnh báo, lỗi runtime và các request bất thường.
+- **All Attendance Containers Stream:** Panel Logs hợp nhất tất cả container của hệ thống theo thời gian thực.
+
+---
+
+## 14. Danh mục LogQL Queries Thực tế (Đã Kiểm thử 100%)
+
+Các câu truy vấn LogQL sau đã được kiểm thử trực tiếp trên hệ thống thật và trả về dữ liệu chính xác:
+
+### 14.1. Query 1: Giám sát Ứng dụng Backend (Node.js App)
+- **Mục đích:** Xem toàn bộ luồng xử lý của ứng dụng Node.js (khởi động máy chủ, kết nối CSDL MySQL, các request HTTP, đăng nhập, điểm danh).
+- **Cú pháp LogQL:**
+  ```logql
+  {service="app"}
+  ```
+- **Kết quả thực tế ghi nhận:**
+  ```
+  [HTTP] POST /api/auth/login 200 108ms
+  [AUTH] Login successful: username=nv001, role=EMPLOYEE, employee_id=1
+  [HTTP] POST /api/employee/check-in 409 142ms
+  [HTTP] POST /api/employee/check-out 400 31ms
+  ```
+
+### 14.2. Query 2: Giám sát Reverse Proxy (NGINX Access Logs)
+- **Mục đích:** Xem toàn bộ request gửi từ client đến Nginx trước khi chuyển tiếp vào backend (IP nguồn, method, URL path, HTTP status code, thời gian xử lý).
+- **Cú pháp LogQL:**
+  ```logql
+  {service="nginx"}
+  ```
+- **Kết quả thực tế ghi nhận:**
+  ```
+  172.22.0.1 - - [23/Oct/2026:10:05:50 +0000] "POST /api/auth/login HTTP/1.1" 200 352 "-" "curl/8.13.0"
+  172.22.0.1 - - [23/Oct/2026:10:05:51 +0000] "POST /api/employee/check-in HTTP/1.1" 409 98 "-" "curl/8.13.0"
+  172.22.0.1 - - [23/Oct/2026:10:05:51 +0000] "POST /api/employee/check-out HTTP/1.1" 400 82 "-" "curl/8.13.0"
+  ```
+
+### 14.3. Query 3: Phát hiện Lỗi & Cảnh báo Bảo mật (Errors, Warnings, 404s)
+- **Mục đích:** Lọc và phát hiện các trường hợp đăng nhập sai mật khẩu, gọi endpoint không tồn tại (404), hoặc lỗi kết nối.
+- **Cú pháp LogQL:**
+  ```logql
+  {service=~"app|nginx"} |~ "(?i)fail|error|warn|404"
+  ```
+- **Kết quả thực tế ghi nhận:**
+  ```
+  [attendance_app] [AUTH] Login failed: username=wrong_user not found
+  [attendance_app] [HTTP] GET /api/nonexistent-route 404 17ms
+  [attendance_nginx] 172.22.0.1 - - "GET /api/nonexistent-route HTTP/1.1" 404 89 "-" "curl/8.13.0"
+  ```
+
+### 14.4. Query 4 (Nâng cao): Tra cứu Sự kiện Nghiệp vụ Điểm danh
+- **Mục đích:** Lọc riêng các hoạt động Đăng nhập, Check-in, Check-out để kiểm toán và truy vết người dùng.
+- **Cú pháp LogQL:**
+  ```logql
+  {service="app"} |~ "(?i)login|check-in|check-out"
+  ```
+- **Kết quả thực tế ghi nhận:**
+  ```
+  [AUTH] Login successful: username=admin, role=ADMIN, employee_id=none
+  [AUTH] Login successful: username=nv001, role=EMPLOYEE, employee_id=1
+  [ATTENDANCE] Check-in success: employee_id=1, shift_id=1, status=ON_TIME, time=08:00:00
+  ```
+
+---
+
+## 15. Hệ thống Bảo mật & Gia cố (System Hardening)
+
+Hệ thống được gia cố toàn diện với **4 biện pháp bảo mật cốt lõi** và các biện pháp bổ trợ:
+
+### 15.1. Biện pháp 1: Thực thi Container bằng Non-Root User (Least Privilege)
+- **Triển khai:** Trong `app/Dockerfile`, ứng dụng Node.js chuyển đổi sang user unprivileged `node` (`USER node`) thay vì chạy mặc định với quyền `root` (`UID 0`). Mã nguồn và thư mục `/app` được bàn giao sở hữu qua `chown -R node:node /app`.
+- **Hạn chế Linux Capabilities:** Bổ sung `cap_drop: [ALL]` trong `docker-compose.yml` để loại bỏ toàn bộ các quyền nhân Linux không cần thiết.
+- **Lệnh xác minh:**
+  ```bash
+  docker compose exec app id
+  # Kết quả: uid=1000(node) gid=1000(node) groups=1000(node) -> Xác nhận UID != 0
+  ```
+
+### 15.2. Biện pháp 2: Phân đoạn Mạng Đa tầng (Multi-tier Network Segmentation)
+- **Triển khai:** Thay vì để tất cả container cùng dùng chung một mạng mặc định, hệ thống phân chia làm 3 Docker bridge networks độc lập:
+  1. `attendance_web_net`: Kết nối Nginx, Node.js App, Nginx Exporter.
+  2. `attendance_db_net`: Kết nối Node.js App, MySQL, phpMyAdmin, MySQL Exporter.
+  3. `attendance_monitoring_net`: Kết nối Prometheus, Grafana, Loki, Promtail, cAdvisor, Nginx Exporter, MySQL Exporter.
+- **Hiệu quả bảo mật:**
+  - Cơ sở dữ liệu MySQL nằm hoàn toàn trong `attendance_db_net`, **không có bất kỳ liên kết nào** tới `attendance_web_net` hoặc `attendance_monitoring_net`. NGINX và Grafana không thể gửi gói tin trực tiếp tới MySQL.
+  - Ngăn chặn nguy cơ Lateral Movement (tấn công mở rộng vùng) nếu một tầng web proxy bị thỏa hiệp.
+- **Lệnh xác minh:**
+  ```bash
+  docker network inspect attendance_web_net attendance_db_net attendance_monitoring_net --format '{{.Name}}: {{range $k, $v := .Containers}}{{$v.Name}} {{end}}'
+  ```
+
+### 15.3. Biện pháp 3: Ràng buộc Cổng Quản trị & Giám sát vào Localhost (`127.0.0.1`)
+- **Triển khai:** Tất cả các cổng phục vụ quản trị và hạ tầng nội bộ được bind nghiêm ngặt vào địa chỉ loopback `127.0.0.1`:
+  - `phpMyAdmin`: `127.0.0.1:8080:80`
+  - `Prometheus`: `127.0.0.1:9090:9090`
+  - `Grafana`: `127.0.0.1:3001:3000`
+  - `Loki`: `127.0.0.1:3100:3100`
+  - Chỉ duy nhất cổng Nginx Web Server (`80:80`) được mở public ra bên ngoài để demo và phục vụ người dùng.
+- **Hiệu quả bảo mật:** Các công cụ nhạy cảm không bị lộ ra dải mạng LAN hoặc Internet, phòng chống quét cổng tự động và brute-force.
+- **Lệnh xác minh:**
+  ```bash
+  docker compose ps
+  # Cột PORTS hiển thị: 127.0.0.1:8080->80/tcp, 127.0.0.1:9090->9090/tcp, 127.0.0.1:3001->3000/tcp, 127.0.0.1:3100->3100/tcp
+  ```
+
+### 15.4. Biện pháp 4: Vô hiệu hóa Leo thang Đặc quyền (`no-new-privileges:true`)
+- **Triển khai:** Áp dụng cờ an ninh `security_opt: [no-new-privileges:true]` cho các dịch vụ chính: `app`, `nginx`, `nginx-exporter`, `mysql-exporter`, `prometheus`, `grafana`, `loki`, `promtail`.
+- **Hiệu quả bảo mật:** Ngăn chặn các tiến trình con bên trong container có thể lợi dụng các tệp tin thực thi mang cờ SUID/SGID để leo thang lên quyền hạn cao hơn.
+
+### 15.5. Các Biện pháp Gia cố Bổ trợ
+1. **Nginx Hardening & Security Headers:**
+   - Ẩn thông tin phiên bản máy chủ: `server_tokens off;` (HTTP response header trả về `Server: nginx` thay vì để lộ số hiệu phiên bản).
+   - Thiết lập đầy đủ các HTTP Security Headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, `Content-Security-Policy`, `X-XSS-Protection`.
+2. **Kiểm soát Kích thước File Log (Log Rotation):**
+   - Thiết lập logging options: `driver: json-file`, `max-size: "10m"`, `max-file: "3"` cho các container trọng yếu, ngăn chặn nguy cơ tràn ổ cứng (Disk Exhaustion DoS).
+3. **Nguyên tắc Quyền tối thiểu cho Cơ sở Dữ liệu (Least Privilege Database):**
+   - User `exporter` chỉ được cấp đúng 3 quyền tối thiểu: `PROCESS`, `REPLICATION CLIENT`, `SELECT`.
+   - Ứng dụng nghiệp vụ chỉ sử dụng user `attendance_user`, không dùng user `root`.
+4. **Bảo mật Bí mật & Thông tin Nhạy cảm (Zero Secret Leak):**
+   - File cấu hình `.env` được loại trừ hoàn toàn khỏi Git qua `.gitignore`.
+   - File `.env.example` chỉ chứa placeholder mẫu.
+   - Không ghi log bất kỳ thông tin nào liên quan đến mật khẩu, JWT token, Authorization header hay database connection strings.
+
+---
+
+## 16. Hướng dẫn Khởi chạy và Kiểm tra Toàn diện
+
+### 16.1. Khởi động Hệ thống
+```bash
+# 1. Sao chép biến môi trường (nếu chưa có)
+cp .env.example .env
+
+# 2. Khởi chạy toàn bộ 11 containers
+docker compose up -d --build
+
+# 3. Kiểm tra danh sách container đang hoạt động
+docker compose ps
+```
+
+### 16.2. Kiểm tra Health & Trạng thái Hoạt động
+- **Website chính:** `http://localhost/` (Tài khoản: `admin` / `admin123` hoặc `nv001` / `nv001123`)
+- **Healthcheck backend:** `curl.exe -i http://localhost/health`
+- **phpMyAdmin:** `http://localhost:8080/`
+- **Prometheus UI:** `http://localhost:9090/` (Targets: `http://localhost:9090/targets`)
+- **Grafana Dashboard:** `http://localhost:3001/` (Tài khoản mặc định: `admin` / mật khẩu trong `.env`)
+- **Loki Status:** `curl.exe http://localhost:3100/ready`
+- **Promtail Target Discovery:** `curl.exe http://localhost:3100/loki/api/v1/labels`
+
+---
+
+## 17. Danh mục Ảnh Minh chứng Toàn diện Cần chụp (Final Evidence Checklist)
+
+Chuẩn bị đầy đủ các ảnh chụp màn hình sau để báo cáo hoàn thành Phase 1, Phase 2 và Phase 3:
+
+1. **Phase 1 - Website Ứng dụng & phpMyAdmin:**
+   - [ ] Giao diện Đăng nhập & Admin Dashboard (`http://localhost/`) quản lý nhân viên, ca làm.
+   - [ ] Giao diện Employee Portal (`http://localhost/employee.html`) thực hiện Check-in / Check-out thành công.
+   - [ ] Giao diện phpMyAdmin (`http://localhost:8080/`) kết nối CSDL `attendance_db` hiển thị dữ liệu tiếng Việt UTF-8 chuẩn.
+2. **Phase 2 - Prometheus & Metrics Dashboard:**
+   - [ ] Giao diện Prometheus Targets (`http://localhost:9090/targets`) hiển thị đủ **4/4 targets đều ở trạng thái UP màu xanh** (`prometheus`, `cadvisor`, `nginx`, `mysql`).
+   - [ ] Dashboard Grafana **Attendance System Monitoring** (`http://localhost:3001`) hiển thị đầy đủ biểu đồ CPU/RAM cAdvisor, NGINX req/s, MySQL queries/s.
+3. **Phase 3 - Centralized Logging & Loki Dashboard:**
+   - [ ] Giao diện Grafana Datasources xác nhận cả 2 nguồn **Prometheus** và **Loki** đều kết nối thành công (`Status: OK`).
+   - [ ] Dashboard Grafana **Attendance System Logs** hiển thị đầy đủ các panels: Total Log Lines, Log Ingestion Rate, Node.js App Logs, NGINX Logs, Filtered Errors, All Container Logs.
+   - [ ] Giao diện **Grafana Explore (Loki)** thực thi thành công ít nhất 3 LogQL queries:
+     - `{service="app"}`
+     - `{service="nginx"}`
+     - `{service=~"app|nginx"} |~ "(?i)fail|error|warn|404"`
+4. **Phase 3 - Hardening & System Verification:**
+   - [ ] Terminal chạy lệnh `docker compose exec app id` xác nhận container Node.js chạy với `uid=1000(node)` (Non-root, UID != 0).
+   - [ ] Terminal chạy lệnh `docker compose ps` xác nhận tất cả 11 containers đều `Up` và các cổng quản trị (`8080`, `9090`, `3001`, `3100`) đều bind vào `127.0.0.1`.
+   - [ ] Terminal chạy lệnh `curl.exe -i http://localhost/health` hiển thị HTTP 200 kèm các Security Headers và `Server: nginx` (đã ẩn số phiên bản qua `server_tokens off`).
+

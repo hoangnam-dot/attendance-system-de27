@@ -194,6 +194,8 @@ async function selfCheckIn(req, res) {
       [employeeId, shift.shift_id, dateStr, finalCheckInTime, status]
     );
 
+    console.log(`[ATTENDANCE] Check-in success: employee_id=${employeeId}, shift_id=${shift.shift_id}, status=${status}, time=${finalCheckInTime}`);
+
     return res.status(201).json({
       success: true,
       message: `Check-in thành công lúc ${finalCheckInTime}! Trạng thái: ${status === 'LATE' ? 'ĐI MUỘN (LATE)' : 'ĐÚNG GIỜ (ON_TIME)'}`,
@@ -259,6 +261,8 @@ async function selfCheckOut(req, res) {
       'UPDATE attendance SET check_out = ? WHERE id = ?',
       [finalCheckOutTime, record.id]
     );
+
+    console.log(`[ATTENDANCE] Check-out success: employee_id=${employeeId}, time=${finalCheckOutTime}`);
 
     return res.json({
       success: true,

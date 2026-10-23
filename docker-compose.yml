@@ -24,8 +24,15 @@ services:
       timeout: 5s
       retries: 15
       start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
-      - attendance_net
+      - db_net
 
   # 2. Node.js Express Application Service
   app:
@@ -47,16 +54,26 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
-      - attendance_net
+      - web_net
+      - db_net
 
-  # 3. phpMyAdmin Management Tool
+  # 3. phpMyAdmin Management Tool (Bound to localhost)
   phpmyadmin:
     image: phpmyadmin:5.2
     container_name: attendance_phpmyadmin
     restart: unless-stopped
     ports:
-      - "${PMA_EXTERNAL_PORT:-8080}:80"
+      - "127.0.0.1:${PMA_EXTERNAL_PORT:-8080}:80"
     environment:
       PMA_HOST: mysql
       PMA_PORT: 3306
@@ -66,10 +83,17 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
-      - attendance_net
+      - db_net
 
-  # 4. Nginx Reverse Proxy
+  # 4. Nginx Reverse Proxy (Public Entrypoint)
   nginx:
     image: nginx:alpine
     container_name: attendance_nginx
@@ -80,8 +104,15 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - app
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
-      - attendance_net
+      - web_net
 
   # 5. cAdvisor Container Monitoring
   cadvisor:
@@ -98,7 +129,7 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
     networks:
-      - attendance_net
+      - monitoring_net
 
   # 6. NGINX Prometheus Exporter
   nginx-exporter:
@@ -109,8 +140,11 @@ services:
       - -nginx.scrape-uri=http://nginx:8080/stub_status
     depends_on:
       - nginx
+    security_opt:
+      - no-new-privileges:true
     networks:
-      - attendance_net
+      - web_net
+      - monitoring_net
 
   # 7. MySQL Prometheus Exporter
   mysql-exporter:
@@ -125,16 +159,19 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
     networks:
-      - attendance_net
+      - db_net
+      - monitoring_net
 
-  # 8. Prometheus Monitoring Server
+  # 8. Prometheus Monitoring Server (Bound to localhost)
   prometheus:
     image: prom/prometheus:v3.15.1
     container_name: attendance_prometheus
     restart: unless-stopped
     ports:
-      - "${PROMETHEUS_EXTERNAL_PORT:-9090}:9090"
+      - "127.0.0.1:${PROMETHEUS_EXTERNAL_PORT:-9090}:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -145,16 +182,23 @@ services:
       - cadvisor
       - nginx-exporter
       - mysql-exporter
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
-      - attendance_net
+      - monitoring_net
 
-  # 9. Grafana Visualization & Dashboard
+  # 9. Grafana Visualization & Dashboard (Bound to localhost)
   grafana:
     image: grafana/grafana:13.2.4
     container_name: attendance_grafana
     restart: unless-stopped
     ports:
-      - "${GRAFANA_EXTERNAL_PORT:-3001}:3000"
+      - "127.0.0.1:${GRAFANA_EXTERNAL_PORT:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
@@ -165,8 +209,59 @@ services:
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     depends_on:
       - prometheus
+      - loki
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
-      - attendance_net
+      - monitoring_net
+
+  # 10. Loki Centralized Log Store (Bound to localhost)
+  loki:
+    image: grafana/loki:3.6.11
+    container_name: attendance_loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - monitoring_net
+
+  # 11. Promtail Log Collector & Forwarder
+  promtail:
+    image: grafana/promtail:3.6.11
+    container_name: attendance_promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - loki
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - monitoring_net
 
 volumes:
   mysql_data:
@@ -175,8 +270,16 @@ volumes:
     name: attendance_prometheus_data
   grafana_data:
     name: attendance_grafana_data
+  loki_data:
+    name: attendance_loki_data
 
 networks:
-  attendance_net:
-    name: attendance_network
+  web_net:
+    name: attendance_web_net
+    driver: bridge
+  db_net:
+    name: attendance_db_net
+    driver: bridge
+  monitoring_net:
+    name: attendance_monitoring_net
     driver: bridge

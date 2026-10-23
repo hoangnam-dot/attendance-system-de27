@@ -20,6 +20,7 @@ async function login(req, res) {
     );
 
     if (rows.length === 0) {
+      console.warn(`[AUTH] Login failed: username=${username.trim()} not found`);
       return res.status(401).json({
         success: false,
         message: 'Tài khoản hoặc mật khẩu không chính xác'
@@ -29,6 +30,7 @@ async function login(req, res) {
     const user = rows[0];
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
+      console.warn(`[AUTH] Login failed: invalid password for username=${username.trim()}`);
       return res.status(401).json({
         success: false,
         message: 'Tài khoản hoặc mật khẩu không chính xác'
@@ -50,6 +52,8 @@ async function login(req, res) {
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000
     });
+
+    console.log(`[AUTH] Login successful: username=${user.username}, role=${user.role}, employee_id=${user.employee_id || 'none'}`);
 
     return res.json({
       success: true,
