@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # 1. Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 2. cAdvisor Container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # 3. Nginx Web Server metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # 4. MySQL Database metrics
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql-exporter:9104']
